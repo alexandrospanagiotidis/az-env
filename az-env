@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+#
+# USAGE
+#
+#     az-env <environment name>
+#
+# DESCRIPTION
+#
+# Configures az-cli to use specific settings like Azure instance,
+# default subscription, and defaults for sub-commands (e.g., ACR name).
+# The settings are read from the file specified in the environment variable
+# "AZENVRC". It should define an associative array named "VALID_ENVIRONMENTS"
+# that contains settings for each environment, e.g.:
+#
+# VALID_ENVIRONMENTS["prod.eu"]="AzureCloud PROD-EUROPE-SUB location=westeurope group=app-rg acr=app-acr"
+#
+# The keys are the names of the environments; all values have to start with
+# the name of the Azure cloud and the default subscription (AzureCloud and
+# PROD-EUROPE-SUB w.r.t. the example). The rest of the value is used as
+# parameter for "az configure --defaults" to set defaults for sub-commands.
+#
+# Note that all defaults will be unset before setting the new ones.
+#
+# This script requires at least Bash v4 and Azure CLI.
+
+set -o errexit -o nounset -o pipefail
+
+declare -A VALID_ENVIRONMENTS
+
+AZENVRC="${AZENVRC?Missing environment variable: AZENVRC (path to azenvrc)}"
+
+# shellcheck disable=SC1090
+source "${AZENVRC}"
+
+set_azure_env() {
+    AZURE_CLOUD="${1?Missing argument: Azure cloud instance; see 'az cloud list'}"
+    shift
+
+    SUBSCRIPTION="${1?Missing argument: subscription; see 'az account list'}"
+    shift
+
+    az cloud set --name "${AZURE_CLOUD}"
+    az ad signed-in-user show --output none || az login
+    az account set --subscription "${SUBSCRIPTION}"
+
+    (( ${#} > 0 )) && az configure --defaults "${@}"
+
+    echo
+    az account list --query '[?isDefault]' --output table
+
+    echo
+    az configure --list-defaults --output table
+}
+
+unset_defaults() {
+    readarray -t DEFAULTS <<< "$(az configure --list --query '[].name' --output tsv)"
+
+    (( ${#DEFAULTS} > 0 )) && {
+        read -r -a EMPTY_DEFAULTS <<< "$(printf '%s="" ' "${DEFAULTS[@]}")"
+        az configure --defaults "${EMPTY_DEFAULTS[@]}"
+    }
+}
+
+print_valid_environments() {
+    echo "Valid environments: ${!VALID_ENVIRONMENTS[*]}"
+}
+
+usage() {
+    >&2 builtin echo "Usage: ${0} <environment name>"
+    print_valid_environments
+    exit 0
+}
+
+main() {
+    (( ${#} < 1 )) && usage
+
+    local ENVIRONMENT="${1?Missing argument: environment name}"
+    shift
+
+    [ ${VALID_ENVIRONMENTS["${ENVIRONMENT}"]+invalid_environment} ] || {
+        echo "Invalid environment: ${ENVIRONMENT}"
+        print_valid_environments
+        exit 1
+    }
+
+    echo "AZURE_CONFIG_DIR = ${AZURE_CONFIG_DIR:-not set, probably using default!}"
+
+    unset_defaults
+    read -r -a SETTINGS <<< "${VALID_ENVIRONMENTS[${ENVIRONMENT}]}"
+    set_azure_env "${SETTINGS[@]}"
+}
+
+main "${@}"
