@@ -62,7 +62,8 @@ unset_defaults() {
 }
 
 print_valid_environments() {
-    echo "Valid environments: ${!VALID_ENVIRONMENTS[*]}"
+    readarray -td '' ENVIRONMENT_NAMES < <(printf '%s\0' "${!VALID_ENVIRONMENTS[@]}" | sort -z)
+    echo "Valid environments: ${ENVIRONMENT_NAMES[*]}"
 }
 
 usage() {
