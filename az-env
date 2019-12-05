@@ -43,7 +43,10 @@ set_azure_env() {
     az ad signed-in-user show --output none || az login
     az account set --subscription "${SUBSCRIPTION}"
 
-    (( ${#} > 0 )) && az configure --defaults "${@}"
+    if (( ${#} > 0 ))
+    then
+        az configure --defaults "${@}"
+    fi
 
     echo
     az account list --query '[?isDefault]' --output table
@@ -55,10 +58,11 @@ set_azure_env() {
 unset_defaults() {
     readarray -t DEFAULTS <<< "$(az configure --list --query '[].name' --output tsv)"
 
-    (( ${#DEFAULTS} > 0 )) && {
+    if (( ${#DEFAULTS} > 0 ))
+    then
         read -r -a EMPTY_DEFAULTS <<< "$(printf '%s="" ' "${DEFAULTS[@]}")"
         az configure --defaults "${EMPTY_DEFAULTS[@]}"
-    }
+    fi
 }
 
 print_valid_environments() {
